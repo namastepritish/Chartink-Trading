@@ -1,10 +1,12 @@
 import requests
 from bs4 import BeautifulSoup as bs
 import pandas as pd
+import html
 
-# Changlog 
-# Added Indices TSI < 0 crossover indicator 
-# Re organized the output on telegram 
+
+# Changlog
+# Added Indices TSI < 0 crossover indicator
+# Re organized the output on telegram
 
 #source : https://www.youtube.com/watch?v=DLqB6ly5k0I
 
@@ -66,38 +68,166 @@ indices_entry_stock_list_filtered = indices_entry_stock_list[['sr', 'nsecode', '
 print(indices_entry_stock_list_filtered)
 
 
-# Sending Stock list to python
+
+# --- Notification helpers: Telegram + Discord (embeds) ---
+
+def clip_cell(text: str, width: int) -> str:
+    s = str(text)
+    if len(s) <= width:
+        return s
+    if width <= 1:
+        return s[:width]
+    return s[: width - 1] + "…"
+
+
+def compute_widths(df: pd.DataFrame, columns, caps):
+    widths = []
+    for col in columns:
+        header_len = len(str(col))
+        if df is None or df.empty:
+            max_data_len = 0
+        else:
+            max_data_len = int(df[col].astype(str).map(len).max())
+        cap = caps.get(col, max(header_len, max_data_len))
+        width = min(max(header_len, max_data_len), cap)
+        widths.append(width)
+    return widths
+
+
+def build_fixed_table(df: pd.DataFrame, columns=("sr", "nsecode", "close")) -> str:
+    """Return a left-aligned, fixed-width ASCII table for the given df.
+    Includes a header row and a separator row. Truncates overly long cells.
+    """
+    try:
+        if df is None or df.empty:
+            # Still show headers for consistency
+            tmp = pd.DataFrame(columns=list(columns))
+            df = tmp
+        # Keep only required columns and stringify
+        safe_df = df.loc[:, list(columns)].copy()
+        # Left alignment for all as strings; format close consistently if present
+        if "close" in safe_df.columns:
+            safe_df["close"] = safe_df["close"].apply(lambda x: str(x))
+        for c in safe_df.columns:
+            safe_df[c] = safe_df[c].astype(str)
+
+        # Column caps to keep lines reasonable
+        caps = {"sr": 6, "nsecode": 24, "close": 14}
+        widths = compute_widths(safe_df, columns, caps)
+
+        # Build header and separator
+        header_cells = [str(col).ljust(w) for col, w in zip(columns, widths)]
+        header_line = " | ".join(header_cells)
+        sep_line = "-+-".join("-" * w for w in widths)
+
+        # Build rows
+        lines = [header_line, sep_line]
+        for _, row in safe_df.iterrows():
+            cells = [clip_cell(row[col], w).ljust(w) for col, w in zip(columns, widths)]
+            lines.append(" | ".join(cells))
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error formatting data: {e}"
+
+
+def chunk_table_by_lines(table_text: str, max_chars: int, header_lines_count: int = 2):
+    """Split a table string into chunks under max_chars, keeping headers in each chunk."""
+    lines = table_text.splitlines()
+    if not lines:
+        return [""]
+    header = lines[:header_lines_count]
+    data = lines[header_lines_count:]
+
+    chunks = []
+    current = header.copy()
+    current_len = sum(len(l) + 1 for l in current)
+
+    for line in data:
+        add_len = len(line) + 1  # include newline
+        if current_len + add_len > max_chars and len(current) > header_lines_count:
+            chunks.append("\n".join(current))
+            current = header.copy()
+            current_len = sum(len(l) + 1 for l in current)
+        current.append(line)
+        current_len += add_len
+
+    if current:
+        chunks.append("\n".join(current))
+    return chunks
+
+
+def df_to_pretty_table(df):
+    return build_fixed_table(df)
+
+
+def _chunk_text(text, size):
+    return [text[i:i + size] for i in range(0, len(text), size)]
+
+
+def send_telegram_message(token: str, chat_id: str, title: str, df):
+    """Send an HTML-formatted message to Telegram using <pre> for monospace table."""
+    table = df_to_pretty_table(df)
+    # Escape for HTML safety, but keep spacing and newlines inside <pre>
+    # Title will be escaped per part
+
+    # Telegram: 4096 char limit per message
+    # We'll chunk by table lines to preserve headers/columns.
+    # 200 char budget for title and tags; 3900 for table body
+    chunks = chunk_table_by_lines(table, max_chars=3900)
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    for idx, chunk in enumerate(chunks, start=1):
+        header = title if idx == 1 else f"{title} (part {idx})"
+        part_html = f"<b>{html.escape(header)}</b>\n<pre>{html.escape(chunk)}</pre>"
+        try:
+            res = requests.post(url, json={"chat_id": chat_id, "text": part_html, "parse_mode": "HTML"})
+            print(f"Telegram status {res.status_code} for {header}")
+        except Exception as e:
+            print(f"Telegram error for {header}: {e}")
+
+
+def send_discord_embed(webhook_url: str, title: str, df, color: int = 0x2F80ED):
+    """Send a Discord embed with a fixed-width table in a code block; splits by lines."""
+    table = df_to_pretty_table(df)
+    # Chunk by lines but wrap each in its own code block to preserve formatting
+    line_chunks = chunk_table_by_lines(table, max_chars=4000)
+    for idx, chunk in enumerate(line_chunks, start=1):
+        embed_title = title if idx == 1 else f"{title} (part {idx})"
+        description = f"```\n{chunk}\n```"
+        payload = {
+            "embeds": [
+                {
+                    "title": embed_title,
+                    "description": description,
+                    "color": color,
+                }
+            ]
+        }
+        try:
+            res = requests.post(webhook_url, json=payload)
+            print(f"Discord status {res.status_code} for {embed_title}")
+        except Exception as e:
+            print(f"Discord error for {embed_title}: {e}")
+
+# --- End notification helpers ---
+
+# Notifications: send to Telegram and Discord
 
 TOKEN='7449783431:AAHqe61k6R14Z_YismA2VEJYeXsACZbpgYg'
-url = f"[https://api.telegram.org/bot{TOKEN}/getUpdates](https://api.telegram.org/bot%7BTOKEN%7D/getUpdates)"
-
 #test chat id
 chat_id="-4287405834"
+# discord webhook
+discord_webhook_url = "https://discord.com/api/webhooks/1407828506091716689/IxpesBlfXurl0PcvQKwkvrikp67ZHqe0K2WWWwUFsmY5pXpvnADd3_KTv74wBJ3Hr5n_"
 
-# Original chat id
+notifications = [
+    ("Daily chart ENTRY: TSI Screener", filtered_stock_list),
+    ("Weekly chart ENTRY: TSI Screener", weekly_tsi_entry_stock_list_filtered),
+    ("Daily chart ENTRY: Indices Only - TSI Screener", indices_entry_stock_list_filtered),
+    ("Daily chart EXIT: TSI Screener", exit_filtered_stock_list),
+]
 
-# chat_id="-1002199303920"
+for title, df in notifications:
+    send_telegram_message(TOKEN, chat_id, title, df)
+    send_discord_embed(discord_webhook_url, title, df)
 
-strategy_name = "Daily chart ENTRY: TSI Screener"
-message = filtered_stock_list.to_string(index=False).replace('&', '%26')
-#message = filtered_stock_list.to_string(index=False)
-url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={chat_id}&text={strategy_name}\n\n{message}"
-print(requests.get(url).json())
 
-strategy_name = "Weekly chart ENTRY: TSI Screener"
-message = weekly_tsi_entry_stock_list_filtered.to_string(index=False).replace('&', '%26')
-#message = weekly_tsi_entry_stock_list_filtered.to_string(index=False)
-url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={chat_id}&text={strategy_name}\n\n{message}"
-print(requests.get(url).json())
-
-strategy_name = "Daily chart ENTRY: Indices Only - TSI Screener"
-message = indices_entry_stock_list_filtered.to_string(index=False).replace('&', '%26')
-#message = indices_entry_stock_list_filtered.to_string(index=False)
-url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={chat_id}&text={strategy_name}\n\n{message}"
-print(requests.get(url).json())
-
-strategy_name = "Daily chart EXIT: TSI Screener"
-message = exit_filtered_stock_list.to_string(index=False).replace('&', '%26')
-#message = exit_filtered_stock_list.to_string(index=False)
-url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={chat_id}&text={strategy_name}\n\n{message}"
-print(requests.get(url).json())
+# done
