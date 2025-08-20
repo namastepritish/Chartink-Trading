@@ -214,7 +214,9 @@ def send_discord_embed(webhook_url: str, title: str, df, color: int = 0x2F80ED):
 
 TOKEN='7449783431:AAHqe61k6R14Z_YismA2VEJYeXsACZbpgYg'
 #test chat id
-chat_id="-4287405834"
+# chat_id="-4287405834"
+# Original chat id
+chat_id="-1002199303920"
 # discord webhook
 discord_webhook_url = "https://discord.com/api/webhooks/1407828506091716689/IxpesBlfXurl0PcvQKwkvrikp67ZHqe0K2WWWwUFsmY5pXpvnADd3_KTv74wBJ3Hr5n_"
 
