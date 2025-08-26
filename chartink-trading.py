@@ -18,6 +18,10 @@ Weekly_Entry_Condition = {'scan_clause': '( {57960} ( weekly {custom_indicator_2
 
 Indice_Daily_Entry_condition = {'scan_clause':'( {45603} ( latest {custom_indicator_23679_start}"(  {custom_indicator_22711_start}"ema(  ema(  {custom_indicator_22709_start} "close - 1 candle ago close"{custom_indicator_22709_end} , 25 ) , 13 )"{custom_indicator_22711_end} /  {custom_indicator_22714_start}"ema(  ema(  {custom_indicator_22712_start}"abs(  close - 1 candle ago close )"{custom_indicator_22712_end} , 25 ) , 13 )"{custom_indicator_22714_end} ) * 100"{custom_indicator_23679_end} < -5 and latest {custom_indicator_23680_start}"ema(  {custom_indicator_22715_start} "100 * (  {custom_indicator_22711_start}"ema(  ema(  {custom_indicator_22709_start} "close - 1 candle ago close"{custom_indicator_22709_end} , 25 ) , 13 )"{custom_indicator_22711_end} /  {custom_indicator_22714_start}"ema(  ema(  {custom_indicator_22712_start}"abs(  close - 1 candle ago close )"{custom_indicator_22712_end} , 25 ) , 13 )"{custom_indicator_22714_end} )"{custom_indicator_22715_end} , 13 )"{custom_indicator_23680_end} < -5 and latest {custom_indicator_23679_start}"(  {custom_indicator_22711_start}"ema(  ema(  {custom_indicator_22709_start} "close - 1 candle ago close"{custom_indicator_22709_end} , 25 ) , 13 )"{custom_indicator_22711_end} /  {custom_indicator_22714_start}"ema(  ema(  {custom_indicator_22712_start}"abs(  close - 1 candle ago close )"{custom_indicator_22712_end} , 25 ) , 13 )"{custom_indicator_22714_end} ) * 100"{custom_indicator_23679_end} > latest {custom_indicator_23680_start}"ema(  {custom_indicator_22715_start} "100 * (  {custom_indicator_22711_start}"ema(  ema(  {custom_indicator_22709_start} "close - 1 candle ago close"{custom_indicator_22709_end} , 25 ) , 13 )"{custom_indicator_22711_end} /  {custom_indicator_22714_start}"ema(  ema(  {custom_indicator_22712_start}"abs(  close - 1 candle ago close )"{custom_indicator_22712_end} , 25 ) , 13 )"{custom_indicator_22714_end} )"{custom_indicator_22715_end} , 13 )"{custom_indicator_23680_end} and 1 day ago  {custom_indicator_23679_start}"(  {custom_indicator_22711_start}"ema(  ema(  {custom_indicator_22709_start} "close - 1 candle ago close"{custom_indicator_22709_end} , 25 ) , 13 )"{custom_indicator_22711_end} /  {custom_indicator_22714_start}"ema(  ema(  {custom_indicator_22712_start}"abs(  close - 1 candle ago close )"{custom_indicator_22712_end} , 25 ) , 13 )"{custom_indicator_22714_end} ) * 100"{custom_indicator_23679_end} <= 1 day ago  {custom_indicator_23680_start}"ema(  {custom_indicator_22715_start} "100 * (  {custom_indicator_22711_start}"ema(  ema(  {custom_indicator_22709_start} "close - 1 candle ago close"{custom_indicator_22709_end} , 25 ) , 13 )"{custom_indicator_22711_end} /  {custom_indicator_22714_start}"ema(  ema(  {custom_indicator_22712_start}"abs(  close - 1 candle ago close )"{custom_indicator_22712_end} , 25 ) , 13 )"{custom_indicator_22714_end} )"{custom_indicator_22715_end} , 13 )"{custom_indicator_23680_end} ) ) '}
 
+def safe_select(df, cols):
+    present = [c for c in cols if c in df.columns]
+    return df[present] if present else pd.DataFrame(columns=cols)
+
 with requests.session() as s:
     r_data = s.get(Charting_url)
     soup = bs(r_data.content, "lxml")
@@ -50,19 +54,19 @@ indices_entry_stock_list = pd.DataFrame(data["data"])
 
 
 # Select the desired columns for Entry stocks
-filtered_stock_list = stock_list[['sr', 'nsecode', 'close']]
+filtered_stock_list = safe_select(stock_list, ['sr', 'nsecode', 'close'])
 print(filtered_stock_list)
 
 # Select the desired columns for Exit stocks
-exit_filtered_stock_list = exit_stock_list[['sr', 'nsecode', 'close']]
+exit_filtered_stock_list = safe_select(exit_stock_list, ['sr', 'nsecode', 'close'])
 print(exit_filtered_stock_list)
 
 # Select the desired columns for Exit stocks
-weekly_tsi_entry_stock_list_filtered = weekly_tsi_entry_stock_list[['sr', 'nsecode', 'close']]
+weekly_tsi_entry_stock_list_filtered = safe_select(weekly_tsi_entry_stock_list, ['sr', 'nsecode', 'close'])
 print(weekly_tsi_entry_stock_list_filtered)
 
 # Select the desired columns for Indices Entry stocks
-indices_entry_stock_list_filtered = indices_entry_stock_list[['sr', 'nsecode', 'close']]
+indices_entry_stock_list_filtered = safe_select(indices_entry_stock_list, ['sr', 'nsecode', 'close'])
 print(indices_entry_stock_list_filtered)
 
 
@@ -82,22 +86,35 @@ strategy_name = "Daily chart ENTRY: TSI Screener"
 message = filtered_stock_list.to_string(index=False).replace('&', '%26')
 #message = filtered_stock_list.to_string(index=False)
 url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={chat_id}&text={strategy_name}\n\n{message}"
-print(requests.get(url).json())
+#print(requests.get(url).json())
 
 strategy_name = "Weekly chart ENTRY: TSI Screener"
 message = weekly_tsi_entry_stock_list_filtered.to_string(index=False).replace('&', '%26')
 #message = weekly_tsi_entry_stock_list_filtered.to_string(index=False)
 url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={chat_id}&text={strategy_name}\n\n{message}"
-print(requests.get(url).json())
+#print(requests.get(url).json())
 
 strategy_name = "Daily chart ENTRY: Indices Only - TSI Screener"
 message = indices_entry_stock_list_filtered.to_string(index=False).replace('&', '%26')
 #message = indices_entry_stock_list_filtered.to_string(index=False)
 url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={chat_id}&text={strategy_name}\n\n{message}"
-print(requests.get(url).json())
+#print(requests.get(url).json())
 
 strategy_name = "Daily chart EXIT: TSI Screener"
 message = exit_filtered_stock_list.to_string(index=False).replace('&', '%26')
 #message = exit_filtered_stock_list.to_string(index=False)
 url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={chat_id}&text={strategy_name}\n\n{message}"
-print(requests.get(url).json())
+#print(requests.get(url).json())
+
+def send_telegram(strategy_name, df):
+    if df.empty:
+        message = "No stocks found."
+    else:
+        message = df.to_string(index=False).replace('&', '%26')
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={chat_id}&text={strategy_name}\n\n{message}"
+    print(requests.get(url).json())
+
+send_telegram("Daily chart ENTRY: TSI Screener", filtered_stock_list)
+send_telegram("Weekly chart ENTRY: TSI Screener", weekly_tsi_entry_stock_list_filtered)
+send_telegram("Daily chart ENTRY: Indices Only - TSI Screener", indices_entry_stock_list_filtered)
+send_telegram("Daily chart EXIT: TSI Screener", exit_filtered_stock_list)
